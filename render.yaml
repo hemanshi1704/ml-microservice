@@ -6,11 +6,13 @@ services:
   - type: web
     name: pt-ml
     runtime: docker
+    plan: free
     dockerContext: services/ml
     dockerfilePath: services/ml/Dockerfile
   - type: web
     name: pt-api
     runtime: docker
+    plan: free
     dockerContext: services/api
     dockerfilePath: services/api/Dockerfile
     envVars:
