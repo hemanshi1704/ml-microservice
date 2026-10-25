@@ -1,7 +1,4 @@
 # Render.com blueprint: New > Blueprint > point at this repo
-databases:
-  - name: pt-db
-    plan: free
 services:
   - type: web
     name: pt-ml
@@ -16,7 +13,7 @@ services:
     dockerContext: services/api
     dockerfilePath: services/api/Dockerfile
     envVars:
-      - { key: DATABASE_URL, fromDatabase: { name: pt-db, property: connectionString } }
+      - { key: DATABASE_URL, sync: false }
       - { key: ML_URL, fromService: { type: web, name: pt-ml, property: hostport } }
       - { key: PRICE_PROVIDER, value: yfinance }
-      - { key: CORS_ORIGINS, value: "https://YOUR-GITHUB-USERNAME.github.io" }  # dashboard origin on GitHub Pages
+      - { key: CORS_ORIGINS, value: "https://hemanshi1704.github.io" } # dashboard origin on GitHub Pages
