@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Portfolio Tracker</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.0.1/chartjs-plugin-zoom.min.js"></script>
+<script src="config.js"></script>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#14171c;--mute:#6b7280;--line:#e5e7eb;--acc:#2563eb;--up:#0f9d58;--dn:#d93025}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#171a21;--ink:#e8eaed;--mute:#9aa0a6;--line:#262b34;--acc:#6ea0ff;--up:#4cd48a;--dn:#ff6b60}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,sans-serif}
+header{display:flex;gap:12px;align-items:center;padding:14px 24px;border-bottom:1px solid var(--line);background:var(--card);flex-wrap:wrap}
+h1{font-size:17px;margin:0 auto 0 0}main{max-width:1100px;margin:0 auto;padding:20px 16px;display:grid;gap:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;overflow:auto}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.kpi small{color:var(--mute);display:block}.kpi b{font-size:22px;font-variant-numeric:tabular-nums}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}th,td{padding:7px 8px;text-align:right;border-bottom:1px solid var(--line)}
+th:first-child,td:first-child{text-align:left}th{color:var(--mute);font-weight:500}
+.up{color:var(--up)}.dn{color:var(--dn)}
+input,select,button{font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--card);color:var(--ink)}
+button{background:var(--acc);color:#fff;border:0;cursor:pointer}form{display:flex;gap:8px;flex-wrap:wrap}
+h2{font-size:14px;margin:0 0 10px}.mute{color:var(--mute)}canvas{max-height:300px}.tools{display:inline-flex;gap:4px;float:right}.tools button{padding:2px 9px;background:var(--card);color:var(--ink);border:1px solid var(--line)}
+</style></head><body>
+<header><h1>📈 Portfolio Tracker</h1>
+<select id="pf"></select><button id="newpf">+ Portfolio</button><span id="status" class="mute"></span></header>
+<main>
+<div class="kpis card" id="kpis"></div>
+<div class="grid2">
+ <div class="card"><h2>Allocation</h2><canvas id="alloc"></canvas></div>
+ <div class="card"><h2>Forecast <select id="fsym"></select> <span class="mute" id="facc"></span>
+ <span class="tools"><button type="button" id="zin" title="Zoom in">+</button><button type="button" id="zout" title="Zoom out">−</button><button type="button" id="zreset" title="Reset zoom">Reset</button></span></h2>
+ <canvas id="fc"></canvas><div class="mute" style="font-size:12px;margin-top:6px">Scroll or pinch to zoom · drag to pan · double-click to reset</div></div>
+</div>
+<div class="card"><h2>Holdings</h2><table id="hold"></table></div>
+<div class="card"><h2>ML risk (1y history)</h2><div class="kpis" id="risk"><span class="mute">Add a trade to see risk metrics.</span></div></div>
+<div class="card"><h2>Add transaction</h2>
+<form id="tx"><input name="symbol" placeholder="AAPL" required size="7">
+<select name="side"><option>buy</option><option>sell</option></select>
+<input name="quantity" type="number" step="any" min="0" placeholder="Qty" required style="width:90px">
+<input name="price" type="number" step="any" min="0" placeholder="Price" required style="width:100px">
+<input name="trade_date" type="date"><button>Add</button></form></div>
+</main>
+<script>
+const API=(window.API_BASE||"/api").replace(/\/$/,""),$=s=>document.querySelector(s);
+const money=n=>n.toLocaleString(undefined,{style:"currency",currency:"USD"});
+const cls=n=>n>=0?"up":"dn", pct=n=>(n>=0?"+":"")+n.toFixed(2)+"%";
+let pid=null,charts={},ins=null;
+async function j(path,opt){const r=await fetch(API+path,{headers:{"Content-Type":"application/json"},...opt});
+ if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||r.statusText)}return r.status==204?null:r.json()}
+async function loadPortfolios(){let l=await j("/portfolios");if(!l.length){await j("/portfolios",{method:"POST",body:JSON.stringify({name:"My Portfolio"})});l=await j("/portfolios")}
+ $("#pf").innerHTML=l.map(p=>`<option value="${p.id}">${p.name}</option>`).join("");pid=pid||l[0].id;$("#pf").value=pid}
+function draw(id,cfg){charts[id]?.destroy();charts[id]=new Chart($(id),cfg)}
+async function refresh(){
+ const s=await j(`/portfolios/${pid}/summary`),t=s.totals;
+ $("#kpis").innerHTML=[["Market value",money(t.market_value)],["Cost basis",money(t.cost_basis)],
+  ["Unrealized P&L",`<span class="${cls(t.unrealized_pnl)}">${money(t.unrealized_pnl)} (${pct(t.unrealized_pnl_pct)})</span>`],
+  ["Realized P&L",`<span class="${cls(t.realized_pnl)}">${money(t.realized_pnl)}</span>`]]
+  .map(([a,b])=>`<div class="kpi"><small>${a}</small><b>${b}</b></div>`).join("");
+ $("#hold").innerHTML="<tr><th>Symbol<th>Qty<th>Avg cost<th>Price<th>Value<th>P&L<th>Weight</tr>"+s.holdings.map(h=>
+  `<tr><td>${h.symbol}<td>${h.quantity}<td>${h.avg_cost.toFixed(2)}<td>${h.price.toFixed(2)}<td>${money(h.market_value)}
+   <td class="${cls(h.unrealized_pnl)}">${money(h.unrealized_pnl)} (${pct(h.unrealized_pnl_pct)})<td>${(h.weight*100).toFixed(1)}%</tr>`).join("");
+ draw("#alloc",{type:"doughnut",data:{labels:s.holdings.map(h=>h.symbol),datasets:[{data:s.holdings.map(h=>h.market_value)}]}});
+ if(!s.holdings.length)return;
+ try{ins=await j(`/portfolios/${pid}/insights?horizon=10`);$("#status").textContent="";renderIns()}
+ catch(e){$("#status").textContent="ML insights unavailable: "+e.message}
+}
+function renderIns(){const r=ins.risk;
+ $("#risk").innerHTML=[["Ann. return",pct(r.annual_return*100)],["Ann. volatility",pct(r.annual_volatility*100)],["Sharpe",r.sharpe],
+  ["VaR 95% (1d)",pct(r.var_95_1d*100)],["CVaR 95% (1d)",pct(r.cvar_95_1d*100)],["Max drawdown",pct(r.max_drawdown*100)]]
+  .map(([a,b])=>`<div class="kpi"><small>${a}</small><b>${b}</b></div>`).join("");
+ const syms=Object.keys(ins.forecasts),cur=$("#fsym").value;$("#fsym").innerHTML=syms.map(s=>`<option>${s}</option>`).join("");
+ $("#fsym").value=syms.includes(cur)?cur:syms[0];drawFc()}
+async function drawFc(){const sym=$("#fsym").value,f=ins.forecasts[sym];if(!f)return;
+ const h=(await j(`/prices/${sym}?days=250`)).prices,L=h.map((_,i)=>i-h.length+1),F=f.forecast.map((_,i)=>i+1);
+ $("#facc").textContent=`hold-out hit rate ${(f.holdout_directional_accuracy*100).toFixed(0)}% · exp. ${pct(f.expected_return_pct)}`;
+ const pad=a=>[...Array(h.length).fill(null),...a],last=h.at(-1);
+ draw("#fc",{type:"line",data:{labels:[...L,...F],datasets:[
+  {label:"Price",data:[...h,...Array(F.length).fill(null)],pointRadius:0,borderColor:"#2563eb"},
+  {label:"Forecast",data:[...Array(h.length-1).fill(null),last,...f.forecast],pointRadius:0,borderDash:[5,4],borderColor:"#f59e0b"},
+  {label:"95% high",data:[...Array(h.length-1).fill(null),last,...f.upper_95],pointRadius:0,borderColor:"#9ca3af55"},
+  {label:"95% low",data:[...Array(h.length-1).fill(null),last,...f.lower_95],pointRadius:0,borderColor:"#9ca3af55",fill:"-1",backgroundColor:"#9ca3af22"}]},
+  options:{animation:false,interaction:{mode:"index",intersect:false},
+  plugins:{legend:{display:false},zoom:{limits:{x:{min:0,max:"original",minRange:8}},
+   zoom:{wheel:{enabled:true},pinch:{enabled:true},drag:{enabled:false},mode:"x"},pan:{enabled:true,mode:"x"}}},
+  scales:{x:{ticks:{maxTicksLimit:8,callback:function(v){const l=this.getLabelForValue(v);return l==0?"today":(l>0?"+"+l+"d":l+"d")}}}}}});
+ // start zoomed on the last ~60 days + forecast; zoom out to see the full year
+ const c=charts["#fc"],n=h.length+F.length;c.zoomScale("x",{min:Math.max(0,n-F.length-60),max:n-1},"none")}
+const fcz=f=>()=>charts["#fc"]&&f(charts["#fc"]);
+$("#zin").onclick=fcz(c=>c.zoom(1.3));$("#zout").onclick=fcz(c=>c.zoom(0.77));$("#zreset").onclick=fcz(c=>c.resetZoom());
+$("#fc").ondblclick=fcz(c=>c.resetZoom());
+$("#pf").onchange=e=>{pid=+e.target.value;refresh()};$("#fsym").onchange=drawFc;
+$("#newpf").onclick=async()=>{const n=prompt("Portfolio name");if(!n)return;const p=await j("/portfolios",{method:"POST",body:JSON.stringify({name:n})});pid=p.id;await loadPortfolios();refresh()};
+$("#tx").onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));
+ for(const k of["quantity","price"])d[k]=+d[k];if(!d.trade_date)delete d.trade_date;
+ try{await j(`/portfolios/${pid}/transactions`,{method:"POST",body:JSON.stringify(d)});e.target.reset();refresh()}catch(err){alert(err.message)}};
+loadPortfolios().then(refresh).catch(e=>$("#status").textContent=e.message);
+</script></body></html>

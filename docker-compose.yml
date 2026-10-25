@@ -1,0 +1,25 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment: { POSTGRES_USER: pt, POSTGRES_PASSWORD: "${DB_PASSWORD:-pt_dev_pw}", POSTGRES_DB: pt }
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U pt"], interval: 5s, retries: 10 }
+  ml:
+    build: ./services/ml
+    restart: unless-stopped
+  api:
+    build: ./services/api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://pt:${DB_PASSWORD:-pt_dev_pw}@db:5432/pt
+      ML_URL: http://ml:8001
+      PRICE_PROVIDER: ${PRICE_PROVIDER:-synthetic}
+      API_KEY: ${API_KEY:-}
+    depends_on: { db: { condition: service_healthy }, ml: { condition: service_started } }
+  web:
+    build: ./web
+    restart: unless-stopped
+    ports: ["${PORT:-8080}:80"]
+    depends_on: [api]
+volumes:
+  pgdata:
