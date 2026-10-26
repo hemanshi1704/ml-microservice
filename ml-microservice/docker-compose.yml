@@ -1,0 +1,17 @@
+services:
+  ml_service:
+    build: ./ml_service
+    ports:
+      - "5001:5001"
+
+  django_backend:
+    build: ./django_backend
+    ports:
+      - "8000:8000"
+    environment:
+      ML_SERVICE_URL: http://ml_service:5001
+      DJANGO_SECRET_KEY: change-me
+      DJANGO_DEBUG: "1"
+      DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1"
+    depends_on:
+      - ml_service
